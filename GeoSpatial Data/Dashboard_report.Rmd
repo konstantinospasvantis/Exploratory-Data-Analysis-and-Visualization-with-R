@@ -1,0 +1,372 @@
+---
+title: "Geospatial Analysis"
+author: "Konstantinos Pasvantis"
+output: 
+  flexdashboard::flex_dashboard:
+    theme:
+      version: 4
+      bootswatch: 'cyborg'
+    orientation: columns
+    source_code: embed
+    vertical_layout: fill
+runtime: shiny
+---
+# World Map Plotting
+```{r global, include=FALSE}
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+library(datasets)
+library(bslib)
+library(rsconnect)
+library(prioritizr)
+library(tidyverse)
+library(cshapes)
+library(sf)
+library(shiny)
+library(sfnetworks)
+library(tidygraph)
+library(ggraph) 
+library(plotly)
+cmap.2019<-cshp(date=as.Date("2019-1-1"))
+validcmap.2019 <- st_make_valid(cmap.2019)
+
+dmat <- distmatrix(as.Date("2019-1-1"), type="mindist")
+
+
+
+
+capital_dataframe<- cmap.2019[,c('capname','caplong','caplat')]%>%st_drop_geometry()
+capital_sf_object<-st_as_sf(x=capital_dataframe,
+                 coords = c('caplong','caplat'),
+                 crs='WGS84')
+a2<-ggplot(data=cmap.2019)+
+  geom_sf()+
+  geom_sf(data=capital_sf_object,color='red',size=0.1)+
+  geom_sf_text(data=capital_sf_object,aes(label=capname),size=3.5,color='blue')
+
+map_cents=st_centroid(validcmap.2019,of_largest=TRUE,crs='WGS84')
+
+
+distances_centroids_capitals<-sapply(1:length(map_cents$geometry),function(i)st_distance(map_cents$geometry[i],capital_sf_object$geometry[i]))
+
+
+cents_from_caps<-cmap.2019%>%
+  add_column(distances=distances_centroids_capitals)%>%
+  mutate(category=case_when(distances<100000~'1',
+                            distances<=300000~'2',
+                            distances>300000~'3'),distances=distances/1000)%>%
+  arrange(desc(distances))
+
+a4<-ggplot(data=cents_from_caps,aes(fill=category))+geom_sf()
+# Β MEROS
+cmap.2019<-cshp(date=as.Date("2019-1-1"))
+newcmap.2019<-cmap.2019%>%st_drop_geometry()
+newcmap.2019$going_capitals=NA
+prox_matrix_countries<-proximity_matrix(validcmap.2019,0)
+for (i in 1:length(newcmap.2019$country_name)){
+  x=c()
+  for (j in 1:length(newcmap.2019$country_name)){
+      if (prox_matrix_countries[i,j]==1){
+        x<-append(x,newcmap.2019[j,'capname'])}
+    newcmap.2019[i,'going_capitals']=tibble(list(x))
+    
+  }
+}
+
+distances_between_capitals=st_distance(capital_sf_object,capital_sf_object)
+row.names(distances_between_capitals)<-capital_dataframe$capname
+colnames(distances_between_capitals)<-capital_dataframe$capname
+
+newcmap.2019<-newcmap.2019[,-c(1,2,3,4,5,6,8,9,10,11)]
+newcmap.2019<-drop_na(newcmap.2019)
+newcmap.2019<-newcmap.2019%>%unnest('going_capitals')
+newcmap.2019$distances=NA
+for (i in 1:length(newcmap.2019$capname)){
+  newcmap.2019$distances[i]<-distances_between_capitals[newcmap.2019$capname[i],newcmap.2019$going_capitals[i]]
+}
+
+newcmap.2019<-newcmap.2019%>%mutate(distances=distances/1000)%>%rename(from=capname,to=going_capitals)
+
+capital_graph<-as_tbl_graph(newcmap.2019)
+
+thm <- theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    panel.grid = element_blank(),
+    panel.grid.major = element_blank(),
+  ) 
+
+theme_set(thm)
+
+
+
+
+capital_graph <- capital_graph%>%
+  activate(nodes) %>%
+  mutate(
+    title = str_to_title(name),
+    label = str_replace_all(title, " ", "\n")
+  )
+
+capitals <- capital_graph %>%
+  activate(nodes)%>%
+  pull(title)
+head(capitals)
+
+nodes_list<-capital_graph%>%activate(nodes)%>%data.frame()
+names_capitals<-nodes_list$title
+as.factor(names_capitals)
+names_capitals_sorted<-sort(names_capitals)
+```
+
+```{r}
+bslib::bs_themer()
+```
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+This slider corresponds to Chart A.\
+In this slider you pick the meters you like for this Chart.\
+This plot shows the countries whose capitals intersects with another country within a radius of given meters.
+
+```{r}
+sliderInput('metres',label='Meters for buffer:',
+            min=30000,max=700000,value=100000,step = 100)
+```
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+This chart shows the capital of every country registered for the desired date.
+```{r}
+dateInput('date',label='Choose the desired Date',value = '2019-1-1',min='1886-1-1',max='2019-12-12')
+```
+
+
+
+
+
+
+
+
+Column {data-height=300}
+-----------------------------------------------------------------------
+### Chart A
+Countries whose capitals have overlapping buffers with another country
+```{r}
+renderPlot({
+  buffer<-st_buffer(capital_sf_object$geometry,input$metres)
+  a<-lengths(st_intersects(buffer,validcmap.2019$geometry))>1
+
+  cmap.2019<-cmap.2019%>%add_column(overlapping_buffer=a)
+  cmap.2019%>%filter(overlapping_buffer==TRUE)%>%
+    ggplot()+geom_sf()
+})
+```
+### Chart B
+Capitals of all countries registered for the desired date (Zoom in to check it out)
+```{r}
+renderPlotly({
+  cmap_des<-cshp(date=as.Date(input$date))
+  capital_dataframe_des<- cmap_des[,c('capname','caplong','caplat')]%>%st_drop_geometry()
+  capital_sf_object_des<-st_as_sf(x=capital_dataframe_des,
+                   coords = c('caplong','caplat'),
+                   crs='WGS84')
+  a2<-ggplot(data=cmap_des)+
+    geom_sf()+
+    geom_sf(data=capital_sf_object_des,color='red',size=0.1)+
+    geom_sf_text(data=capital_sf_object_des,aes(label=capname),size=3.5,color='blue')
+  ggplotly(a2)
+})
+
+```
+
+# World Map Plotting pt.2
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+Here we can see in Chart C that every country belongs in a special category.\
+A country belongs in the first category (red colour) if the distance between its capital from its centroid is lower than 100 km.\
+It belongs in the second category (green colour) if the distance between its capital from its centroid is more than 100 km and lower than 300 km.\
+If their distance is more than 300km, it belongs to the third category (blue colour). \
+You can zoom in the map to see it better.
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+In this slider you can adjust the kilometers to see which countries are this far away from greece (distance between centroids).
+```{r}
+sliderInput('kms',label = 'Number of Kilometers: ',min=100,max=11000,value=2000,step=100)
+```
+
+
+
+
+
+
+
+
+
+
+Column 
+-----------------------------------------------------------------------
+### Chart C
+Ranking of countries based on their distance between their centroids and their capitals 
+```{r}
+ggplotly(a4)
+```
+
+
+### Chart D
+Nearest countries to Greece (specified by kilometers).
+```{r}
+renderPlot({
+  km_logical<-dmat['350',]<input$kms
+  greece_below_kms<-cmap.2019[km_logical,]
+  ggplot(greece_below_kms)+geom_sf()
+})
+```
+
+
+
+
+# Networks Between Capitals
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+Choose the layout you would like to use for this graph. Unfortunately, we designed this graph without zoom because of errors.
+```{r}
+selectInput("layout_opt", label = "Layout for chart E :",
+            choices = c('graphopt','kk', 'linear', 'matrix','fabric','drl'), selected = 'graphopt')
+```
+You can also choose if you want repelled text labels for nodes or not. Aesthetically, repelled text labels are better, but we are losing many capital labels.
+```{r}
+selectInput("rep", label = "Repeled node labels :",
+            choices = c('Yes','No'), selected = 'No')
+```
+
+
+
+
+
+
+
+
+Column 
+-----------------------------------------------------------------------
+### Chart E
+Network of capitals using different layouts 
+```{r}
+renderPlot({
+  ggraph(capital_graph,layout =input$layout_opt,circular=ifelse(input$layout_opt=='linear',TRUE,FALSE))+geom_node_point()+
+  geom_edge_link(color='gray',alpha=0.3)+geom_node_text(mapping=aes(label=name,color=name),size=3,repel=ifelse(input$rep=='Yes',TRUE,FALSE))
+})
+
+
+
+
+```
+
+
+# Shortest path between capitals 
+Column {.sidebar}
+-----------------------------------------------------------------------
+In this section we are searching for shortest paths between connected capitals.\
+You can choose the country to begin your trip and then select the desired destination.\
+Chart F finds the shortest path between two capitals, if they are connected, corresponding to the minimum distance between them.\
+Chart G finds the the shortest path corresponding to the smallest number of crossing capitals possible.\
+In case there is no connection between the two capitals selected, the two graphs plot the entire network.
+```{r}
+selectInput('start',label='Select the starting capital:', choices = names_capitals_sorted, selected = 'Athens' )
+```
+
+```{r}
+selectInput('end',label='Select the destination:', choices = names_capitals_sorted, selected = 'Copenhagen' )
+```
+
+Column 
+-----------------------------------------------------------------------
+### Chart F
+Shortest Path between capitals (considering distance)
+```{r}
+renderPlot({
+  shortest_weighted <- capital_graph %>%
+  morph(to_shortest_path, which(capitals == input$start), which(capitals == input$end) , weights = distances)
+
+shortest_weighted <- shortest_weighted%>%
+  mutate(selected_node = TRUE) %>%
+  activate(edges) %>%
+  mutate(selected_edge = TRUE) %>%
+  unmorph() 
+
+shortest_weighted <- shortest_weighted %>%
+  activate(nodes) %>%
+  mutate(selected_node = ifelse(is.na(selected_node), 1.5, 2)) %>%
+  activate(edges) %>%
+  mutate(selected_edge = ifelse(is.na(selected_edge), 1.5, 2)) %>%
+  arrange(selected_edge)
+
+
+
+shortest_weighted %>%
+  ggraph(layout = "graphopt") +
+  geom_edge_link(aes(alpha = selected_edge), color = "gray") +
+  geom_node_text(aes(label = label, color =name, alpha = selected_node ), size = 3) 
+})
+```
+
+
+Column 
+-----------------------------------------------------------------------
+### Chart G
+Shortest Path between capitals (considering number of capitals)
+```{r}
+renderPlot({
+  shortest_normal <- capital_graph %>%
+  morph(to_shortest_path, which(capitals == input$start), which(capitals == input$end))
+
+shortest_normal %>%
+  mutate(selected_node = TRUE) %>%
+  unmorph()
+
+shortest_normal <- shortest_normal%>%
+  mutate(selected_node = TRUE) %>%
+  activate(edges) %>%
+  mutate(selected_edge = TRUE) %>%
+  unmorph() 
+
+
+shortest_normal <- shortest_normal %>%
+  activate(nodes) %>%
+  mutate(selected_node = ifelse(is.na(selected_node), 1, 2)) %>%
+  activate(edges) %>%
+  mutate(selected_edge = ifelse(is.na(selected_edge), 1, 2)) %>%
+  arrange(selected_edge)
+
+shortest_normal %>%
+  ggraph(layout = "graphopt") +
+  geom_edge_link(aes(alpha = selected_edge), color = "gray") +
+  geom_node_text(aes(label = label, color =name, alpha = selected_node ), size = 3)
+})
+
+```
+
+
+
+
+
+
+
+
+

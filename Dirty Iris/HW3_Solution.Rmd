@@ -1,0 +1,167 @@
+---
+title: "HW3_Sol"
+author: "Konstantinos Pasvantis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## ΑΣΚΗΣΗ 1 
+#### Ερώτημα (α)
+Διαβάζουμε τα δεδομένα από τον σύνδεσμο με την εντολή "dirty_iris<-read.csv(url('https://raw.githubusercontent.com/edwindj/datacleaning/master/data/dirty_iris.csv'))".
+Δεν μπορουσε το R markdown file να διαβασει το dataset από τον σύνδεσμο, οπότε αποθήκευσα το csv file στον υπολογιστή και μετα το διάβασα από εκεί.
+Βλέπουμε μερικές από τις εγγραφές του dirty_iris που δημιουργήθηκε:
+
+```{r, echo=TRUE,warning=FALSE}
+library(dplyr)
+dirty_iris<-read.csv('Dirty_iris.csv')
+glimpse(dirty_iris)
+```
+
+Όπως μπορούμε να παρατηρήσουμε, η μεταβλητή species δεν είναι factor.
+
+#### Ερώτημα (β)
+Για να βροούμε τον αριθμό των complete cases στο dataset, χρησιμοποιούμε την εντολή complete.cases, σε συνδυασμό με την συνάρτηση εύρεσης αθροίσματος, και στην συνέχεια για το ζητούμενο ποσοστό αρκεί να διαιρέσω αυτόν τον αριθμό με τον συνολικό αριθμό παρατηρήσεων.
+
+```{r,echo=TRUE}
+sum(complete.cases(dirty_iris))
+percentage<-sum(complete.cases(dirty_iris))/nrow(dirty_iris)
+percentage  
+```
+
+#### Ερώτημα (γ)
+Σύμφωνα με το βιβλίο στο οποίο είναι γραμμένες οι ασκήσεις, οι ειδικές τιμές είναι τα NA, NaN και Inf.
+Οπότε αρκεί να βρω αν υπάρχουν κάποιες άλλες εγγραφές είτε με NaN, είτε με Inf.
+```{r,echo=TRUE,warning=FALSE,message=FALSE}
+library(tidyverse)
+dirty_iris %>% filter_all(any_vars(. %in% c(NaN)))
+dirty_iris %>% filter_all(any_vars(. %in% c(Inf)))
+```
+Βλέπουμε ότι υπάρχει μία εγγραφή στην οποία η τιμή του πλάτους του πετάλου είναι ίση με Inf οπότε την αντικαθιστώ με NA.
+```{r,echo=TRUE}
+dirty_iris[dirty_iris==Inf]<-NA
+dirty_iris %>% filter_all(any_vars(. %in% c(Inf)))
+```
+
+
+## AΣΚΗΣΗ 2
+#### Ερώτημα (α)
+Σύμφωνα με τους κανόνες οι οποίοι αναγράφονται στην άσκηση, σχηματίζω ένα txt αρχείο με όνομα Iris_constraints στο οποίο γράφω:
+\#numerical rules\
+Petal.Witdh > 0 \
+Petal.Length > 0\
+Sepal.Length > 0\
+Sepal.Width > 0 \
+Petal.Length >= 2*Petal.Width\
+Sepal.Length <= 30\
+Sepal.Length > Petal.Length\
+
+
+\#categorical rules \
+Species %in% c("setosa", "versicolor", "virginica")
+
+Οπότε πλεόν μπορώ να πάω να διαβάσω αυτό το αρχείο και θα έχω:
+```{r,message=FALSE,warning=FALSE}
+library(editrules)
+```
+```{r,echo=TRUE}
+E <- editfile("Iris_constraints.txt")
+E
+```
+
+#### Ερώτημα (β)
+Ακολουθώντας την θεωρία από το βιβλίο, σχηματίζω την μεταβλητή ve με τα violated edits του dataset, και στην συνέχεια σχηματίζω το γράφημα
+```{r,echo=TRUE}
+ve <- violatedEdits(E, dirty_iris)
+summary(ve)
+plot(ve)
+```
+Οπότε όπως βλέπουμε από το summary, παραβιάζονται οι κανονισμόι num2 και num3 1 φορά ο καθένας, ο num5 4 φορές, οι num6, num7 και num4 2 φορές ο καθένας.
+2
+
+#### Ερώτημα (γ) 
+Αρκεί να δουύμε την τιμή του summary(ve), στην οποία αναγράφονται οι εγγραφές με κανένα παραβιασμό κάποιου κανόνα. Στην συγκεκριμένη περίπτωση βλέπουμε ότι έχουμε 90 τέτοιες εγγραφές.  
+
+#### Ερώτημα (δ)
+Ο μόνος άνω φραγμένος περιορισμός που έχουμε όσον αφορά το μήκος του πετάλου, είναι ο num7, που μας λέει ότι το μήκος του πετάλου δεν πρέπει να υπερβαίνει το μήκος του σεπάλου. Για να βρόυμε ποιες εγγραφές είναι αυτές που παραβιάζουν αυτόν τον κανόνα χρησιμοποιώ την εντολή which():
+```{r,echo=TRUE}
+dirty_iris[which(dirty_iris$Petal.Length>=dirty_iris$Sepal.Length),]
+```
+
+
+#### Ερώτημα (ε)
+Σχηματίζω το boxplot και στην συνέχεια βρίσκω ποιές τιμές είναι outliers για τις τιμές του σεπάλου.
+```{r,echo=TRUE}
+boxplot(dirty_iris$Sepal.Length)$out
+```
+Οπότε αρκεί να βρώ τις καταχωρήσεις στον πίνακα στις οποίες το μήκος του σεπάλου είναι ίσο με 0, 49 και 73.
+```{r,echo=TRUE}
+dirty_iris[which(dirty_iris$Sepal.Length == 0),]
+dirty_iris[which(dirty_iris$Sepal.Length == 73),]
+dirty_iris[which(dirty_iris$Sepal.Length == 49),]
+```
+Το μόνο που μπορώ να σκεφτώ είναι ότι ξεχάστηκε να τοποιετηθεί το δεκαδικό ψηφίο, δηλαδή αντί για 73, το αποτέλεσμα να ήταν ίσο με 7.3, και το 0 έπρεπε να έιναι ένας φυσικός αριθμός όπως το 3, ή το 4 κ.ο.κ. Κάτι το οποίο θα έβγαζε και νόημα καθώς το εύρος των τιμών του μήκους των σεπάλων από οτι βλέπουμε από το γράφημα κυμαίνεται περίπου ανάμεσα στα 4 και στα 8 εκ.\
+Τέλος, αντικαθιστώ τα outliers με ΝΑ.
+```{r,echo=TRUE}
+library(naniar)
+dirty_iris1<-dirty_iris %>%
+  replace_with_na(replace = list(Sepal.Length = c(73,49,0)))
+```                              
+## ΑΣΚΗΣΗ 3
+#### Ερώτημα (α)
+Η άσκηση λέει να αντικατασταθούν οι αρνητικές τιμές από την μεταβλητή Petal.Width, αλλά στην πραγματικότητα εννοεί τις αρνητικές τιμές από την Sepal.Width. Έτσι, σχηματίζουμε το CorrectionRules ως εξής:
+```{r, echo=TRUE,warning=FALSE,message=FALSE}
+library(deducorrect)
+u<-correctionRules(expression(
+  if (is.na(Sepal.Width)) Sepal.Width<--1,
+  if (Sepal.Width < 0) Sepal.Width<-NA
+))
+```
+Εδώ πέρα αντικαθιστώ πρώτα τις NA τιμές με το -1 το οποίο είναι αρνητικός αριθμός, και στην συνέχεια το αλλάζει αυτόματα σε ΝΑ (Δεν μπορουσα να χρησιμοποιήσω την εντολή μόνο για να αλλάξω την μοναδική αρνητική τιμή, μου έβγαζε error).\
+Στην συνέχεια χρησιμοποιώ την εντολή CorretWithRules και έχουμε το ζητούμενο αποτέλεσμα.
+```{r, echo=TRUE}
+correctWithRules(u,dirty_iris)
+```
+
+## ΑΣΚΗΣΗ 4 
+#### Ερώτημα (α)
+Σύμφωνα με το βιβλίο για να γίνει το knn imputation το μόνο που χρειάζεται είναι μία εντολή. Δεν θέλουμε τις τελευταίες 5 νέες στήλες που σχηματίζονται.
+```{r,echo=TRUE,message=FALSE,warning=FALSE}
+library(VIM)
+dirty_iris2<- kNN(dirty_iris)%>% select(-c(6:10))
+dirty_iris2
+```
+
+#### Ερώτημα (β)
+Για να χρησιμοποιήσουμε την μέθοδο Sequential hotdeck imputation, παίρνουμε την έτοιμη συνάρτηση που δίνεται στο βιβλίο
+```{r,echo=TRUE}
+seqImpute <- function(x,last){
+  n <- length(x)
+  x <- c(x,last)
+  i <- is.na(x)
+  while(any(i)){
+    x[i] <- x[which(i) + 1]
+    i <- is.na(x)
+  }
+  x[1:n]
+}
+```
+Στην συνέχεια κάνουμε arrange το dataset και παίρνουμε την στήλη με το πλάτος των πετάλων ώστε να το κάνουμε impute με την βοήθεια της συνάρτησης. Τέλος, αλλάζουμε τις τιμές του κανονικού dataset, με τις imputed, αφού το κάνουμε ξανά arrange σύμφωνα με τα είδη, και το νέο dataset το ονομάζουμε dirty_iris3.
+```{r,echo=TRUE}
+x1<-dirty_iris%>%arrange(Species)
+dirty_iris3<-dirty_iris%>%arrange(Species)%>%mutate(Petal.Width=seqImpute(x1$Petal.Width,2))
+dirty_iris3
+```
+Παρατηρούμε ότι οι τιμές NA που αντικαταστήθηκαν είναι παρόμοιες με τις τιμές των μηκών των πετάλων για κάθε είδος, εκτός από την παρατήρηση η οποία ακολουθείται απο μία παρατήρηση virginica.
+
+#### Ερώτημα (γ)
+Με το ίδιο σκεπτικό, κάνουμε ακριβώς τα ίδια πράγματα, μόνο που τώρα κάνουμε arrange ως προς το είδος αλλά και το μήκος των σεπάλων.
+```{r,echo=TRUE}
+x2<-dirty_iris%>%arrange(Species,Sepal.Length)
+dirty_iris3<-dirty_iris%>%arrange(Species,Sepal.Length)%>%mutate(Petal.Width=seqImpute(x2$Petal.Width,2))
+dirty_iris3
+```
+
+
+
+
+

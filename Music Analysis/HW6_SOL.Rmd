@@ -1,0 +1,225 @@
+---
+title: "HW6_SOL"
+author: "Konstantinos Pasvantis"
+date: "2023-01-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Φορτώνουμε τα απαραίττητα πακέτα που θα χρειαστούμε
+```{r,warning=FALSE,message=FALSE}
+library(stringr)
+library(ggmosaic)
+library(splitstackshape)
+library(tidyverse)
+library(spData)
+library(gghighlight)
+library(ggtext)
+library(sf)
+```
+
+
+## Ερώτημα 1
+Πριν προσωρήσουμε πρέπει να φορτώσουμε το dataset και να κάνουμε την κατάλληλη προεπεξεργασία.
+```{r}
+album<-read.csv('album.csv')
+head(album)
+```
+
+Χωρίζουμε την στήλη album σε δύο διακριτές στήλες με ονόματα title και year. Και στην συνέχεια μετατρέπουμε τις τιμές της στήλης year σε αριθμούς, αφού βγάλουμε τις παρενθέσεις.
+```{r}
+album<-album%>%separate(album,c('year','title'),sep="^\\S*\\K\\s+")
+album$year<-str_sub(album$year,2,-2)%>%as.numeric()
+head(album)
+```
+
+Στην συνέχεια επιλέγουμε από το dataset album τις στήλες που μας ενδιαφέρουν, δηλαδή αυτή που περιλαμβάνει το όνομα των καλλιτεχνών και αυτή με τα είδη κάθε άλμπουμ.
+```{r}
+artists<-album%>%select(c(2,1))
+```
+Χρησιμοποιώντας την εντολή cSplit της χωρίζουμε τα είδη των album σε όσα είναι καταγεγραμένα, διαλέγουμε μόνο τις πρώτες τρεις στήλες και έτσι έχουμε καταλήξει με ένα καινούργιο dataset το οποίο έχει μόνο τα ονόματα των καλλιτεχνών και τα δύο κυριότερα είδη μουσικής που παίζουν.
+```{r,warning=FALSE}
+artists<-artists%>%cSplit('genre',sep=',',direction = 'wide' )%>%select(c(1,2,3))%>%rename(primary='genre_1',secondary='genre_2')
+artists<-distinct(artists,artist,.keep_all = TRUE)
+head(artists)
+```
+Χωρίζουμε στην συνέχεια και τα είδη μουσικής από το αρχικό μας dataset για να μας βοηθήσει αργότερα.
+```{r}
+album<-album%>%cSplit('genre',sep=',',direction = 'wide' )
+```
+
+## Ερώτημα 1 
+### (α)
+```{r}
+album%>%
+  ggplot(aes(x=genre_1,fill=genre_1))+
+  geom_bar()+
+  coord_flip()+
+  geom_text(stat='count',aes(label=..count..))+
+  ggtitle("Number of Albums based on primary genre")+xlab("Genre") + ylab("Albums") + theme(legend.position = "none")
+```
+
+### (β)
+```{r}
+album%>%
+  pivot_longer(cols = c(4:11))%>%
+  na.omit()%>%
+  ggplot(aes(x=value,fill=value))+
+  geom_bar()+
+  coord_flip()+
+  geom_text(stat='count',aes(label=..count..))+
+  ggtitle("Number of Albums based on all genres")+xlab("Genre") + ylab("Albums") + theme(legend.position = "none")
+
+```
+
+### (γ)
+
+```{r}
+album%>%
+  distinct(artist,.keep_all = TRUE)%>%
+  ggplot(aes(x=genre_1,fill=genre_1))+
+  geom_bar()+
+  coord_flip()+
+  geom_text(stat='count',aes(label=..count..))+ggtitle("Number of Artists based on primary genre")+xlab("Genre") + ylab("Artists") + 
+  theme(legend.position = "none")
+```
+
+### (δ)
+
+```{r}
+album%>%
+  distinct(artist,.keep_all = TRUE)%>%
+  pivot_longer(cols = c(4:11))%>%
+  na.omit()%>%
+  ggplot(aes(x=value,fill=value))+
+  geom_bar()+
+  coord_flip()+
+  geom_text(stat='count',aes(label=..count..),)+ggtitle("Number of artists based on all genres")+xlab("Genre") + ylab("Artists") + theme(legend.position = "none")
+```
+
+## Ερώτημα 2
+
+```{r,fig.width=11}
+album%>%
+  ggplot(aes(x=reorder(year,-year)))+
+  geom_bar()+
+  coord_flip()+
+  geom_text(stat='count',aes(label=..count..))+
+  ggtitle("Number of albums recorder every year")+xlab("Year") + ylab("Albums")+ theme(axis.text = element_text(size = 9))+scale_x_discrete(guide = guide_axis(check.overlap = TRUE))
+```
+
+## Ερώτημα 3 
+
+```{r}
+album%>%
+  group_by(genre_1)%>%
+  mutate(count_name_occurr = n())%>%
+  arrange(-count_name_occurr)%>%
+  distinct(genre_1,.keep_all = TRUE)%>%
+  head(n=5)%>%
+  ggplot(aes(x=genre_1,y=count_name_occurr,fill=genre_1))+geom_bar(stat='identity')+
+  ggtitle("Top 5 genres over the last years")+xlab("Genre") + ylab("Albums") + theme(legend.position = "none")+
+  geom_text(aes(label=count_name_occurr),vjust=1.6, color="white", size=3.5)
+
+```
+
+##  Ερώτημα 4
+Εδώ επειδή έχουμε πολλά είδη μουσικής το mosaic plot δεν εμφανίζεται τόσο καθαρά όσο θα έπρεπε, αλλά μπορούμε να δούμε ποιά είδη έχουν μεγάλη συσχέτιση μεταξύ τους διασθητικά.
+```{r,fig.width=11,fig.height=11,warning=FALSE}
+artist_new<-artists%>%
+  mutate(secondary=coalesce(secondary,primary))
+
+artist_new%>%
+  ggplot()+geom_mosaic(aes(x=product(primary,secondary),fill=primary))+
+  theme(axis.text.x = element_text(angle = 80))+
+  coord_flip()+
+  guides(fill=guide_legend(title="Genre"))
+```
+
+
+## Ερώτημα 5
+Εδώ πέρα δημιουργούμε ένα διάνυσμα από το dataset world, το οποίο περιέχει μόνο τα ονόματα των χωρών και τις γεωμετρίες τους.
+```{r}
+country_names<-world$name_long%>%st_drop_geometry()
+```
+Με αυτόν τον κώδικα τώρα βλέπουμε ποιά ονόματα χωρών εμφανίζονται σε τίτλους album, και δημιουργοόυμε στο dataset world μία νέα στήλη η οποία περιέχει το πόσες φορές εμφανίζονται τα ονόματα των χωρών συνολικά σε τίτλους album.
+```{r}
+
+result<-data.frame(country_names, t(sapply(paste0('\\b', country_names, '\\b'), function(x) {
+  tmp <- grepl(x, album$title)
+  c(perc = mean(tmp) * 100, 
+    Freq = sum(tmp))
+})), row.names = NULL) 
+
+world$Freq_countries=result$Freq
+head(world)
+```
+Και τώρα σχηματίζουμε τον χάρτη στον οποίο οι χώρες εμφανίζονται χρωματισμένες ανάλογα με το πόσα album περιέχουν το όνομά τους. 
+Μπορούμε να δούμε ότι η Ιαπωνία έχει αναφερθεί σε 20 τίτλους album!
+
+```{r}
+world%>%ggplot()+geom_sf(aes(fill=as.factor(Freq_countries)))+guides(fill=guide_legend(title="Albums"))+ggtitle("Number of Albums whose title contains the name of each country")+theme(plot.title = element_textbox_simple())
+```
+
+## Ερώτημα 6
+Στο πρώτο γράφημα παρουσιάζουμε τους 10 καλύτερους καλλιτέχνες στην κατάταξη, με βάση τον αριθμό των album που έχουν δημιουργήσει ανά τα χρόνια.
+
+
+```{r}
+top_artists_based_on_album<-album%>%
+  group_by(artist)%>%
+  summarise(number_of_albums=n())%>%
+  arrange(-number_of_albums)%>%head(n=10)
+head(top_artists_based_on_album)
+```
+Για να κάνουμε πιο όμοφο το γράφημα, φτιάχνουμε καλύτερα την μορφή με την οποία εμφανίζεται το όνομα των καλλιτεχνών.
+```{r}
+artist_names=strsplit(top_artists_based_on_album$artist,',')
+
+top_artists_based_on_album$artist=unlist(lapply(artist_names, 
+              function(x) paste(x[1:length(x) %% 2 == 0], 
+                                x[1:length(x) %% 2 != 0])))
+
+top_artists_based_on_album%>%
+  ggplot(aes(x=artist,y=number_of_albums,fill=artist))+
+  geom_col()+
+  ggtitle("Top 10 Artists based on number of albums")+
+  xlab("Artist") +
+  ylab("Albums")+
+  theme(legend.position = "none")+
+  geom_text(aes(label=number_of_albums),vjust=1.6, color="white", size=3.5)+
+  theme(axis.text.x = element_text(angle = 45))
+```
+\ 
+Στο δεύτερο γράφημα παρουσιάζεται οι 10 καλύτερες χρονίες όσον αφορά τον αριθμό των album που παράχθηκαν από διακεκριμένους καλλιτέχνες.
+
+```{r}
+album%>%
+  distinct(artist,.keep_all = TRUE)%>%
+  group_by(year)%>%
+  summarise(number_of_distinct_artists=n())%>%
+  arrange(-number_of_distinct_artists)%>%head(n=10)%>%
+  ggplot(aes(x=reorder(year,-year),y=number_of_distinct_artists,fill=as.factor(year)))+
+  geom_col()+
+  ggtitle("Years with most albums produced form distinct artists")+xlab("Year") + ylab("Distinct Artists") +
+  theme(legend.position = "none")+geom_text(aes(label=number_of_distinct_artists),vjust=1.6, color="white", size=3.5)+
+  theme(axis.text.x = element_text(angle = 45))
+```
+\
+Και τέλος, σε αυτό το γράφημα εμφανίζουμε τις χρονίες που δημιουργήθηκαν album που στον τίτλο τους περιήχαν την λέξη αγάπη (love)
+```{r}
+album%>%
+  filter(str_detect(title,'Love'))%>%
+  group_by(year)%>%
+  summarise(number_of_album_containing_word=n())%>%
+  arrange(-number_of_album_containing_word)%>%head(n=5)%>%
+  ggplot(aes(x=reorder(year,year),y=number_of_album_containing_word,fill=as.factor(year)))+
+  geom_col()+ggtitle("Years with most albums containting the word love ")+xlab("Year") + ylab("Number of Albums") + theme(legend.position = "none")+
+  geom_text(aes(label=number_of_album_containing_word),vjust=1.6, color="white", size=3.5)+
+  theme(axis.text.x = element_text(angle = 45))
+```
+
+

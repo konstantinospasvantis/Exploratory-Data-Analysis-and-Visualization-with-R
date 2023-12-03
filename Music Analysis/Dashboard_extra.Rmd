@@ -1,0 +1,184 @@
+---
+title: "Music Analysis"
+author: "Konstantinos Pasvantis"
+output: 
+  flexdashboard::flex_dashboard:
+    theme:
+      version: 4
+      bootswatch: 'cyborg'
+    orientation: rows
+    source_code: embed
+    vertical_layout: fill
+runtime: shiny
+---
+
+
+
+# All around the world
+```{r global, include=FALSE}
+library(datasets)
+library(bslib)
+library(flexdashboard)
+library(rsconnect)
+library(prioritizr)
+library(cshapes)
+library(shiny)
+library(sfnetworks)
+library(tidygraph)
+library(ggraph) 
+library(plotly)
+library(stringr)
+library(ggmosaic)
+library(splitstackshape)
+library(tidyverse)
+library(spData)
+library(gghighlight)
+library(ggtext)
+library(sf)
+
+album<-read.csv('album.csv')
+album<-album%>%separate(album,c('year','title'),sep="^\\S*\\K\\s+")
+album$year<-str_sub(album$year,2,-2)%>%as.numeric()
+artists<-album%>%select(c(2,1))
+artists<-artists%>%cSplit('genre',sep=',',direction = 'wide' )%>%select(c(1,2,3))%>%rename(primary='genre_1',secondary='genre_2')
+artists<-distinct(artists,artist,.keep_all = TRUE)
+album<-album%>%cSplit('genre',sep=',',direction = 'wide' )
+country_names<-world$name_long%>%st_drop_geometry()
+result<-data.frame(country_names, t(sapply(paste0('\\b', country_names, '\\b'), function(x) {
+  tmp <- grepl(x, album$title)
+  c(perc = mean(tmp) * 100, 
+    Freq = sum(tmp))
+})), row.names = NULL) 
+
+world$Freq_countries=result$Freq
+```
+
+```{r}
+bslib::bs_themer()
+```
+
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+In this Dashboard we are presenting 3 interesting charts produced from a music dataset. \
+In this tab we can see how many times a country's name is contained in an album's title. \
+You can hover over each country and have a closer look at the number of albums.\
+Also, you can zoom in for your own convenience. \
+(Check out in how many albums 'Japan' is contained and compare this number to the rest countries of the world)
+
+
+Row {data-height=100}
+-----------------------------------------------------------------------
+### Total Albums
+```{r}
+valueBox(11461,color='primary',icon = 'fa-compact-disc')
+```
+
+### Total Artists
+```{r}
+valueBox(3692,color='success',icon = 'fa-microphone')
+```
+
+
+
+### Different Music Genres
+```{r}
+valueBox(21,color='info',icon = 'fa-music')
+```
+
+
+Row{data-height=700}
+-----------------------------------------------------------------------
+### Chart A
+```{r}
+a1<-world%>%ggplot(aes(fill=as.factor(Freq_countries),text=paste('Album titles containing "',name_long,'" :' ,Freq_countries)))+geom_sf()+guides(fill=guide_legend(title="Albums"))+ggtitle("Countries that are contained in an album title")
+ggplotly(a1,tooltip = 'text')
+
+```
+
+
+# I'm walkin on sunshine
+Column {.sidebar}
+-----------------------------------------------------------------------
+This chart shows the best artists through the years. Pick the number you like and a bar chart containing the artists that produced the most albums from 1938 to 2020 will show up. 
+
+```{r}
+selectInput("number_of_artists", label = "Number of Top Artists",
+            choices = c(10:30), selected = 20)
+```
+
+
+
+
+Column {data-height=300}
+-----------------------------------------------------------------------
+### Chart B
+```{r}
+renderPlot({
+  top_artists_based_on_album<-album%>%
+    group_by(artist)%>%
+    summarise(number_of_albums=n())%>%
+    arrange(-number_of_albums)%>%head(n=input$number_of_artists)
+  
+  
+  artist_names=strsplit(top_artists_based_on_album$artist,',')
+  
+  top_artists_based_on_album$artist=unlist(lapply(artist_names,
+                                                  function(x) paste(x[1:length(x) %% 2 == 0],
+                                                                    x[1:length(x) %% 2 != 0])))
+  
+  top_artists_based_on_album%>%
+    ggplot(aes(x=artist,y=number_of_albums,fill=artist))+
+    geom_col()+
+    ggtitle(paste("Top",input$number_of_artists,"Artists based on number of albums"))+
+    xlab("Artist") +
+    ylab("Albums")+
+    theme(legend.position = "none")+
+    geom_text(aes(label=number_of_albums),vjust=1.6, color="white", size=5)+
+    theme(axis.text.x = element_text(angle = 45),axis.text = element_text(size=12))
+    
+  
+}
+)
+
+```
+
+
+# What is love?
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+Here we can see what inspires the artists to produce songs.
+It seems natural to begin with the word 'Love', but if you like to, you can see some other words that makes their songs popular. \
+Without further explanation, this chart shows the top 10 years with most albums containing the word you desire in their title.
+```{r}
+selectInput("word", label = "Defined word:",
+            choices = c('World','Dream','Woman','Man','Night','Day','Time','Love','Life','Back'), selected = 'Love')
+```
+
+
+
+Column {data-height=300}
+-----------------------------------------------------------------------
+### Chart C
+
+```{r}
+renderPlot({
+  album%>%
+  filter(str_detect(title,input$word))%>%
+  group_by(year)%>%
+  summarise(number_of_album_containing_word=n())%>%
+  arrange(-number_of_album_containing_word)%>%head(n=10)%>%
+  ggplot(aes(x=reorder(year,year),y=number_of_album_containing_word,fill=as.factor(year)))+
+  geom_col()+ggtitle(paste("Years with most albums containting the word",input$word))+xlab("Year") + ylab("Number of Albums") +
+  theme(legend.position = "none")+
+  geom_text(aes(label=number_of_album_containing_word),vjust=1.6, color="white", size=3.5)+
+  theme(axis.text=element_text(size=12))
+  
+})
+```
+
+
+
+
